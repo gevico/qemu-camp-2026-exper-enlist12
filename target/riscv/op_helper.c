@@ -62,6 +62,185 @@ void helper_raise_exception(CPURISCVState *env, uint32_t exception)
     riscv_raise_exception(env, exception, 0);
 }
 
+void helper_xg233ai_dma(CPURISCVState *env, target_ulong dst_addr,
+                        target_ulong src_addr, target_ulong selector)
+{
+    uintptr_t ra = GETPC();
+    uint32_t value;
+    target_ulong src_offset;
+    target_ulong dst_offset;
+    int n;
+    int i, j;
+
+    switch (selector) {
+    case 0:
+        n = 8;
+        break;
+    case 1:
+        n = 16;
+        break;
+    case 2:
+        n = 32;
+        break;
+    default:
+        return;
+    }
+
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < n; j++) {
+            src_offset = (target_ulong)(i * n + j) * sizeof(uint32_t);
+            dst_offset = (target_ulong)(j * n + i) * sizeof(uint32_t);
+            value = cpu_ldl_le_data_ra(env, src_addr + src_offset, ra);
+            cpu_stl_le_data_ra(env, dst_addr + dst_offset, value, ra);
+        }
+    }
+}
+
+void helper_xg233ai_sort(CPURISCVState *env, target_ulong addr,
+                        target_ulong num)
+{
+    uintptr_t ra = GETPC();
+    int i,j;
+
+    for (i = 0; i < num; i++) {
+        for (j = 0; j < num-i-1; j++) {
+            target_ulong low = (target_ulong)(j) * sizeof(uint32_t);
+            target_ulong high = (target_ulong)(j+1) * sizeof(uint32_t);
+            uint32_t value_low = cpu_ldl_le_data_ra(env, addr + low, ra);
+            uint32_t value_high = cpu_ldl_le_data_ra(env, addr + high, ra);
+            if (value_low > value_high){
+                cpu_stl_le_data_ra(env,addr + low, value_high, ra);
+                cpu_stl_le_data_ra(env,addr + high,value_low, ra);
+            }
+        }
+    }
+}
+
+void helper_xg233ai_crush(CPURISCVState *env, target_ulong dst_addr,
+                        target_ulong src_addr, target_ulong num)
+{
+    uintptr_t ra = GETPC();
+    int i;
+
+    for (i = 0; i < num/2; i++) {
+        target_ulong low = src_addr + 2 * (target_ulong)(i) * sizeof(uint8_t);
+        uint8_t low_value = (uint8_t)cpu_ldub_data_ra(env, low , ra);
+        uint8_t high_value = (uint8_t)cpu_ldub_data_ra(env, low + sizeof(uint8_t) , ra);
+        uint8_t new = (low_value & 0xF) | ((high_value & 0xF) << 4 );
+        cpu_stb_data_ra(env, dst_addr + (target_ulong)(i) * sizeof(uint8_t), new, ra);
+    }
+}
+
+void helper_xg233ai_expand(CPURISCVState *env, target_ulong dst_addr,
+                        target_ulong src_addr, target_ulong num)
+{
+    uintptr_t ra = GETPC();
+    int i;
+
+    for (i = 0; i < num; i++) {
+        target_ulong low = dst_addr + 2 * (target_ulong)(i) * sizeof(uint8_t);
+        uint8_t val = (uint8_t)cpu_ldub_data_ra(env, src_addr + (target_ulong)(i) * sizeof(uint8_t) , ra);
+        uint8_t low_val = val & 0xF;
+        uint8_t high_val = (val & 0xF0) >> 4;
+        cpu_stb_data_ra(env, low, low_val, ra);
+        cpu_stb_data_ra(env, low + (target_ulong)sizeof(uint8_t), high_val, ra);
+    }
+}
+
+target_ulong helper_xg233ai_vdot(CPURISCVState *env, target_ulong arr1,
+                        target_ulong arr2)
+{
+    uintptr_t ra = GETPC();
+    int i;
+
+    target_ulong sum = 0;
+
+    for (i = 0; i < 16; i++) {
+        target_ulong addr1 = arr1 + (target_ulong)(i) * sizeof(uint32_t);
+        target_ulong addr2 = arr2 + (target_ulong)(i) * sizeof(uint32_t);
+        uint32_t val1 = cpu_ldl_le_data_ra(env, addr1 , ra);
+        uint32_t val2 = cpu_ldl_le_data_ra(env, addr2 , ra);
+        sum += (uint64_t)val1 * (uint64_t)val2;
+    }
+
+    return sum;
+}
+
+void helper_xg233ai_vrelu(CPURISCVState *env, target_ulong dst_addr,
+                        target_ulong src_addr, target_ulong num)
+{
+    uintptr_t ra = GETPC();
+    int i;
+
+    for (i = 0; i < num; i++) {
+        int val = (int)cpu_ldl_data_ra(env, src_addr + (target_ulong)(i) * sizeof(uint32_t) , ra);
+        if (val < 0) val = 0;
+        cpu_stl_le_data_ra(env, dst_addr + (target_ulong)(i) * sizeof(uint32_t), val, ra);
+    }
+}
+
+void helper_xg233ai_vscale(CPURISCVState *env, target_ulong dst_addr,
+                        target_ulong src_addr, target_ulong num)
+{
+    uintptr_t ra = GETPC();
+    int i;
+
+    for (i = 0; i < 16; i++) {
+        int val = (int)cpu_ldl_data_ra(env, src_addr + (target_ulong)(i) * sizeof(uint32_t) , ra);
+        val *= num;
+        cpu_stl_le_data_ra(env, dst_addr + (target_ulong)(i) * sizeof(uint32_t), val, ra);
+    }
+}
+
+target_ulong helper_xg233ai_vmax(CPURISCVState *env, target_ulong arr1,
+                        target_ulong num)
+{
+    uintptr_t ra = GETPC();
+    int i;
+
+    int max = cpu_ldl_le_data_ra(env, arr1 , ra);
+
+    for (i = 1; i < num; i++) {
+        target_ulong addr = arr1 + (target_ulong)(i) * sizeof(uint32_t);
+        int val = cpu_ldl_le_data_ra(env, addr , ra);
+        if (val > max) max = val;
+    }
+
+    return max;
+}
+
+void helper_xg233ai_vadd(CPURISCVState *env, target_ulong src1,
+                        target_ulong src2, target_ulong dst)
+{
+    uintptr_t ra = GETPC();
+    int i;
+
+    for (i = 0; i < 16; i++) {
+        int val = (int)cpu_ldl_data_ra(env, src1 + (target_ulong)(i) * sizeof(uint32_t) , ra);
+        int tmp = (int)cpu_ldl_data_ra(env, src2 + (target_ulong)(i) * sizeof(uint32_t) , ra);
+        cpu_stl_le_data_ra(env,dst + (target_ulong)(i) * sizeof(uint32_t), val+tmp , ra);
+    }
+}
+
+void helper_xg233ai_gemm(CPURISCVState *env, target_ulong src1,
+                        target_ulong src2, target_ulong dst)
+{
+    uintptr_t ra = GETPC();
+    int i,j,k;
+
+    for (i = 0; i < 4; i++) {
+        for (j = 0; j < 4; j++){
+            long long acc = 0;
+            for (k = 0; k < 4; k++){
+                long long val = cpu_ldl_data_ra(env, src1 + (target_ulong)(i*4+k) * sizeof(uint32_t) , ra);
+                long long tmp = cpu_ldl_data_ra(env, src2 + (target_ulong)(k*4+j) * sizeof(uint32_t) , ra);
+                acc += val*tmp;
+            }
+            cpu_stl_le_data_ra(env,dst + (target_ulong)(i*4+j) * sizeof(uint32_t), acc , ra);
+        }
+    }
+}
+
 target_ulong helper_csrr(CPURISCVState *env, int csr)
 {
     /*
